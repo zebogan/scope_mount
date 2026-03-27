@@ -1,0 +1,294 @@
+import serial, struct
+import constants, Encoder, Writer
+import atexit, time, pygame
+import stellarium_connect
+import info
+
+def exit_handler():
+    w.close()
+    stellarium_connect.close_socket()
+
+atexit.register(exit_handler)
+
+
+ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+w = Writer.StreamWriter(ser, 1)
+
+
+# printer distance to 1deg
+az_1deg = 390 # 35100/90
+alt_1deg = 165 # 9900/60
+# TODO: need to calibrate more
+
+latitude = info.latitude
+longitude = info.longitude
+
+staple_side1 = 0
+staple_side2 = 0
+
+# current alt, az
+current_alt = 0
+current_az = 0
+
+# TODO: remove staple avoiding (🥀) once i have new belt
+def slew(target_alt, target_az, speed, tracking):
+    staple_avoid_az = target_az
+
+    #move inside staple cases
+    if (staple_side1 >= 355 and staple_side2 <= 5 or staple_side2 >= 355 and staple_side1 <= 5) and (target_az >= 355 or target_az <= 5):
+        print("Can't do that cuz staple")
+    elif staple_side1 + 5 == staple_side2 and (target_az >= staple_side1 and target_az <= staple_side2): # staple ccw
+        print("Can't do that cuz staple")
+    elif staple_side1 - 5 == staple_side2 and (target_az >= staple_side2 and target_az <= staple_side1): # staple cw
+        print("Can't do that cuz staple")
+
+    #find move that doesnt cross staple
+    else:
+        #know that to move to theta you can move to theta or 360 - theta or 360 + theta
+        if staple_side1 + 5 == staple_side2: # staple ccw
+            if target_az > staple_side2 and current_az < staple_side1:
+                staple_avoid_az = 360 - target_az
+                print("staple in path 1")
+            if target_az < staple_side1 and current_az > staple_side2:
+                staple_avoid_az = 360 + target_az
+                print("staple in path 2")
+        if staple_side1 - 5 == staple_side2: # staple cw
+            if target_az > staple_side1 and current_az < staple_side2:
+                staple_avoid_az = 360 - target_az
+                print("staple in path 3")
+            if target_az < staple_side2 and current_az > staple_side1:
+                staple_avoid_az = 360 + target_az
+                print("staple in path 4")
+            
+        move_to(round(target_alt * alt_1deg), round(staple_avoid_az * az_1deg), speed)
+        if tracking == False:
+            print("slewing...")
+        while get_pos() != (round(target_alt * alt_1deg), round(staple_avoid_az * az_1deg)):
+            time.sleep(0.1)
+        if tracking == False:
+            print("target reached!")
+        return target_alt, target_az
+    
+    return current_alt, current_az
+    
+
+def align():
+    print("Center bright star in eyepiece (press q when done)")
+    movement_window()
+    print("Slew in Stellarium")
+    ra_deg, dec_deg = stellarium_connect.get_slew()
+    star_alt, star_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
+    print(f"Star alt: {star_alt}, Star az: {star_az}")
+
+    print("Alignment complete!")
+    return star_alt, star_az
+
+
+def calibrate_staple_range():
+    print("Move to side of staple (q when done)")
+    movement_window()
+    staple_side1 = get_pos()[1] / az_1deg
+    global current_az
+    current_az = get_pos()[1] / az_1deg
+    direction = input("Is staple (1) clockwise or (2) counterclockwise from motor? ")
+    while direction != '1' and direction != '2':
+        print("Invalid answer")
+        direction = input("Is staple (1) clockwise or (2) counterclockwise from motor? ")
+    # az movement pos -> ccw, neg -> cw
+    if direction == '1':
+        staple_side2 = staple_side1 - 5
+    elif direction == '2':
+        staple_side2 = staple_side1 + 5
+
+    if staple_side1 < 0:
+        staple_side1 = 360 + staple_side1
+    if staple_side2 < 0:
+        staple_side2 = 360 + staple_side2
+
+    if staple_side1 > 360:
+        staple_side1 = staple_side1 % 360
+    if staple_side2 > 360:
+        staple_side2 = staple_side2 % 360
+
+    return staple_side1, staple_side2
+
+
+def move_to(alt, az, speed):
+    payload = struct.pack(
+        '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
+        constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
+        alt,az,0,0,0,
+        speed,
+        Encoder.encode_axes([]),
+        1,
+        1
+    )
+
+    w.send_action_payload(payload)
+
+
+def stop():
+    payload = struct.pack(
+        '<BB', 
+        constants.host_query_command_dict['EXTENDED_STOP'], 
+        (1<<0) | (1<<2)
+    )
+
+    w.send_action_payload(payload)
+
+
+def get_pos():
+    payload = struct.pack(
+        '<B',
+        constants.host_query_command_dict['GET_EXTENDED_POSITION']
+    )
+
+    response = w.send_query_payload(payload)
+    unpackedResponse = struct.unpack('<BiiiiiH', response)
+    return unpackedResponse[1], unpackedResponse[2]
+
+
+def set_pos(alt, az):
+    payload = struct.pack(
+        '<Biiiii',
+        constants.host_action_command_dict['SET_EXTENDED_POSITION'],
+        alt, az, 0, 0, 0
+    )
+
+    w.send_action_payload(payload)
+
+
+def queue_status():
+    payload = struct.pack(
+        '<B',
+        constants.host_query_command_dict['IS_FINISHED']
+    )
+
+    response = w.send_query_payload(payload)
+    unpackedResponse = struct.unpack('<BB', response)
+    return unpackedResponse[1]
+
+
+def movement_window():
+    pygame.init()
+    screen = pygame.display.set_mode((200, 200))
+    pygame.display.set_caption('Alignment')
+    clock = pygame.time.Clock()
+    running = True
+    moving = False
+    step_speed = 500
+
+    font = pygame.font.Font(None, 32)
+
+    
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
+                    running = False
+                if event.key == pygame.K_UP:
+                    step_speed += 50
+                elif event.key == pygame.K_DOWN:
+                    step_speed -= 50
+
+        keys = pygame.key.get_pressed()
+
+        dx = 0
+        dy = 0
+
+        if keys[pygame.K_d]:
+            dx += az_1deg
+        if keys[pygame.K_a]:
+            dx -= az_1deg
+
+        if keys[pygame.K_w]:
+            dy += alt_1deg
+        if keys[pygame.K_s]:
+            dy -= alt_1deg
+
+        if dx != 0 or dy != 0:
+            if queue_status() == 1:
+                move_to(get_pos()[0] + dy, get_pos()[1] + dx, step_speed)
+                moving = True
+        else:
+            if moving:
+                stop()
+                moving = False
+
+        text = font.render(f"{step_speed}", True, (255, 255, 255), (0,0,0))
+
+        textRect = text.get_rect()
+        textRect.center = (100, 100)
+        screen.fill((0,0,0))
+        screen.blit(text, textRect)
+        pygame.display.update()
+
+        clock.tick(20)
+
+    pygame.quit()
+
+
+def tracking_window(ra_deg, dec_deg):
+    pygame.init()
+    screen = pygame.display.set_mode((200, 200))
+    pygame.display.set_caption('Tracking')
+    clock = pygame.time.Clock()
+    running = True
+    global current_alt, current_az
+
+    
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
+                    running = False
+
+
+        target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
+        current_alt, current_az = slew(target_alt, target_az, 100, True)
+
+        clock.tick(10)
+
+    pygame.quit()
+
+
+def loop():
+    while True:
+        option = input("goto (1), goto w/ tracking (2), or quit (3): ")
+        while not (option == '1' or option == '2' or option == '3'):
+            print("invalid answer")
+            option = input("goto (1), goto w/ tracking (2), or quit (3): ")
+        if option == '3':
+            break
+        else:
+            global current_alt, current_az
+            ra_deg, dec_deg = stellarium_connect.get_slew()
+            target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
+            current_alt, current_az = slew(target_alt, target_az, 500, False)
+            if option == '2':
+                print("close window, q, or esc to stop tracking")
+                tracking_window(ra_deg, dec_deg)
+
+                
+
+    
+#stop()
+
+stellarium_connect.start_socket()
+current_alt, current_az = align()
+set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
+staple_side1, staple_side2 = calibrate_staple_range()
+loop()
+stellarium_connect.close_socket()
+
+# notes: 
+# az movement pos -> ccw, neg -> cw
+# 1deg az is about 5mm, staple about 16mm long
+# moves same distance regardless of speed, moves same speed regardless of distance
+# speed in units/sec, same units as distance (eg move 1000 at 1000 takes 1s, 1000 at 500 is 2s, 1000 at 2000 is 0.5s, etc)
