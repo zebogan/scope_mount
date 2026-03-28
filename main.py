@@ -92,7 +92,7 @@ def second_star_align(target_alt, target_az, start_alt, start_az):
     current_alt = get_pos()[0] / alt_1deg
 
     print(f"alt: current {current_alt} - target {target_alt} = {current_alt - target_alt}")
-    print(f"updated alt_1deg{alt_1deg * (target_alt - start_alt) / (current_alt - start_alt)}")
+    print(f"updated alt_1deg: {alt_1deg * (target_alt - start_alt) / (current_alt - start_alt)}")
     print(f"az: current {current_az} - target {target_az} = {current_az - target_az}")
     print(f"updated az_1deg: {az_1deg * ((target_az - start_az + 180) % 360 - 180) / ((current_az - start_az + 180) % 360 - 180)}")
 
