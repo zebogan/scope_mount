@@ -85,6 +85,18 @@ def align():
     return star_alt, star_az
 
 
+def second_star_align(target_alt, target_az, start_alt, start_az):
+    movement_window()
+    global current_alt, current_az
+    current_az = get_pos()[1] / az_1deg
+    current_alt = get_pos()[0] / alt_1deg
+
+    print(f"alt: current {current_alt} - target {target_alt} = {current_alt - target_alt}")
+    print(f"updated alt_1deg{alt_1deg * (target_alt - start_alt) / (current_alt - start_alt)}")
+    print(f"az: current {current_az} - target {target_az} = {current_az - target_az}")
+    print(f"updated az_1deg: {az_1deg * ((target_az - start_az + 180) % 360 - 180) / ((current_az - start_az + 180) % 360 - 180)}")
+
+
 def calibrate_staple_range():
     print("Move to side of staple (q when done)")
     movement_window()
@@ -245,17 +257,21 @@ def tracking(ra_deg, dec_deg):
 
 def loop():
     while True:
-        option = input("goto (1), goto w/ tracking (2), or quit (3): ")
-        while not (option == '1' or option == '2' or option == '3'):
+        option = input("goto (1), goto w/ tracking (2), cal 2nd star (4), or quit (3): ")
+        while not (option == '1' or option == '2' or option == '3' or option == '4'):
             print("invalid answer")
-            option = input("goto (1), goto w/ tracking (2), or quit (3): ")
+            option = input("goto (1), goto w/ tracking (2), cal 2nd star (4), or quit (3): ")
         if option == '3':
             break
         else:
             global current_alt, current_az
             ra_deg, dec_deg = stellarium_connect.get_slew()
             target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
+            temp_alt = current_alt
+            temp_az = current_az
             current_alt, current_az = slew(target_alt, target_az, 500, False)
+            if option == '4':
+                second_star_align(target_alt, target_az, temp_alt, temp_az)
             if option == '2':
                 print("ctrl+c to stop tracking")
                 tracking(ra_deg, dec_deg)
