@@ -15,10 +15,10 @@ atexit.register(exit_handler)
 ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
 w = Writer.StreamWriter(ser, 1)
 
-
+#undershot
 # printer distance to 1deg
-az_1deg = 390 # 35100/90
-alt_1deg = 165 # 9900/60
+az_1deg = 390 # 35100/90 = 390
+alt_1deg = 165 # 9900/60 = 165
 # TODO: need to calibrate more
 
 latitude = info.latitude
@@ -232,31 +232,15 @@ def movement_window():
     pygame.quit()
 
 
-def tracking_window(ra_deg, dec_deg):
-    pygame.init()
-    screen = pygame.display.set_mode((200, 200))
-    pygame.display.set_caption('Tracking')
-    clock = pygame.time.Clock()
-    running = True
+def tracking(ra_deg, dec_deg):
     global current_alt, current_az
-
-    
-
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
-                    running = False
-
-
-        target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
-        current_alt, current_az = slew(target_alt, target_az, 100, True)
-
-        clock.tick(10)
-
-    pygame.quit()
+    try:
+        while True:
+            target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
+            current_alt, current_az = slew(target_alt, target_az, 100, True)
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass
 
 
 def loop():
@@ -273,8 +257,8 @@ def loop():
             target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
             current_alt, current_az = slew(target_alt, target_az, 500, False)
             if option == '2':
-                print("close window, q, or esc to stop tracking")
-                tracking_window(ra_deg, dec_deg)
+                print("ctrl+c to stop tracking")
+                tracking(ra_deg, dec_deg)
 
                 
 
@@ -301,6 +285,8 @@ shelve_file.close()
 
 loop()
 stellarium_connect.close_socket()
+
+#movement_window()
 
 # notes: 
 # az movement pos -> ccw, neg -> cw
