@@ -3,6 +3,7 @@ import constants, Encoder, Writer
 import atexit, time, pygame
 import stellarium_connect
 import info
+import shelve
 
 def exit_handler():
     w.close()
@@ -283,7 +284,21 @@ def loop():
 stellarium_connect.start_socket()
 current_alt, current_az = align()
 set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
-staple_side1, staple_side2 = calibrate_staple_range()
+
+staple_choice = input("update staple calibration? (y/n) ")
+while staple_choice != 'y' and staple_choice != 'n':
+    print("Invalid answer")
+    staple_choice = input("update staple calibration? (y/n) ")
+shelve_file = shelve.open('staple')
+if staple_choice == 'y':
+    staple_side1, staple_side2 = calibrate_staple_range()
+    shelve_file['staple_side1'] = staple_side1
+    shelve_file['staple_side2'] = staple_side2
+elif staple_choice == 'n':
+    staple_side1 = shelve_file['staple_side1']
+    staple_side2 = shelve_file['staple_side2']
+shelve_file.close()
+
 loop()
 stellarium_connect.close_socket()
 
