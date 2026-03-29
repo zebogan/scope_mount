@@ -15,7 +15,6 @@ atexit.register(exit_handler)
 ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
 w = Writer.StreamWriter(ser, 1)
 
-#undershot
 # printer distance to 1deg
 az_1deg = 390 # 35100/90 = 390
 alt_1deg = 165 # 9900/60 = 165
@@ -91,9 +90,9 @@ def second_star_align(target_alt, target_az, start_alt, start_az):
     current_az = get_pos()[1] / az_1deg
     current_alt = get_pos()[0] / alt_1deg
 
-    print(f"alt: current {current_alt} - target {target_alt} = {current_alt - target_alt}")
-    print(f"updated alt_1deg: {alt_1deg * (target_alt - start_alt) / (current_alt - start_alt)}")
-    print(f"az: current {current_az} - target {target_az} = {current_az - target_az}")
+    print(f"alt: current {current_alt} - target {target_alt} = {current_alt - target_alt}, start {start_alt}")
+    print(f"updated alt_1deg: {alt_1deg * ((target_alt - start_alt) / (current_alt - start_alt))}")
+    print(f"az: current {current_az} - target {target_az} = {current_az - target_az}, start {start_az}")
     print(f"updated az_1deg: {az_1deg * ((target_az - start_az + 180) % 360 - 180) / ((current_az - start_az + 180) % 360 - 180)}")
 
 
@@ -224,7 +223,7 @@ def movement_window():
 
         if dx != 0 or dy != 0:
             if queue_status() == 1:
-                move_to(get_pos()[0] + dy, get_pos()[1] + dx, step_speed)
+                move_to(round(get_pos()[0] + dy), round(get_pos()[1] + dx), step_speed)
                 moving = True
         else:
             if moving:
@@ -271,6 +270,8 @@ def loop():
             temp_az = current_az
             current_alt, current_az = slew(target_alt, target_az, 500, False)
             if option == '4':
+                target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
+                slew(target_alt, target_az, 500, False)
                 second_star_align(target_alt, target_az, temp_alt, temp_az)
             if option == '2':
                 print("ctrl+c to stop tracking")
