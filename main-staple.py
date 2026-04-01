@@ -23,30 +23,53 @@ alt_1deg = 165 # 9900/60 = 165
 latitude = info.latitude
 longitude = info.longitude
 
+staple_side1 = 0
+staple_side2 = 0
 
 # current alt, az
 current_alt = 0
 current_az = 0
 
-
+# TODO: remove staple avoiding (🥀) once i have new belt
 def slew(target_alt, target_az, speed, tracking):
-    effective_az = target_az
+    staple_avoid_az = target_az
 
-    if target_az - current_az > 180:
-        effective_az = target_az - 360
-    if target_az - current_az < -180:
-        effective_az = target_az + 360
+    #move inside staple cases
+    if (staple_side1 >= 355 and staple_side2 <= 5 or staple_side2 >= 355 and staple_side1 <= 5) and (target_az >= 355 or target_az <= 5):
+        print("Can't do that cuz staple")
+    elif staple_side1 + 5 == staple_side2 and (target_az >= staple_side1 and target_az <= staple_side2): # staple ccw
+        print("Can't do that cuz staple")
+    elif staple_side1 - 5 == staple_side2 and (target_az >= staple_side2 and target_az <= staple_side1): # staple cw
+        print("Can't do that cuz staple")
 
-    move_to(round(target_alt * alt_1deg), round(effective_az * az_1deg), speed)
-
-    if tracking == False:
-        print("slewing...")
-    while get_pos() != (round(target_alt * alt_1deg), round(effective_az * az_1deg)):
-        time.sleep(0.1)
-    if tracking == False:
-        print("target reached!")
-
-    return target_alt, target_az
+    #find move that doesnt cross staple
+    else:
+        #know that to move to theta you can move to theta or 360 - theta or 360 + theta
+        if staple_side1 + 5 == staple_side2: # staple ccw
+            if target_az > staple_side2 and current_az < staple_side1:
+                staple_avoid_az = 360 - target_az
+                print("staple in path 1")
+            if target_az < staple_side1 and current_az > staple_side2:
+                staple_avoid_az = 360 + target_az
+                print("staple in path 2")
+        if staple_side1 - 5 == staple_side2: # staple cw
+            if target_az > staple_side1 and current_az < staple_side2:
+                staple_avoid_az = 360 - target_az
+                print("staple in path 3")
+            if target_az < staple_side2 and current_az > staple_side1:
+                staple_avoid_az = 360 + target_az
+                print("staple in path 4")
+            
+        move_to(round(target_alt * alt_1deg), round(staple_avoid_az * az_1deg), speed)
+        if tracking == False:
+            print("slewing...")
+        while get_pos() != (round(target_alt * alt_1deg), round(staple_avoid_az * az_1deg)):
+            time.sleep(0.1)
+        if tracking == False:
+            print("target reached!")
+        return target_alt, target_az
+    
+    return current_alt, current_az
     
 
 def align():
@@ -71,6 +94,35 @@ def second_star_align(target_alt, target_az, start_alt, start_az):
     print(f"updated alt_1deg: {alt_1deg * ((target_alt - start_alt) / (current_alt - start_alt))}")
     print(f"az: current {current_az} - target {target_az} = {current_az - target_az}, start {start_az}")
     print(f"updated az_1deg: {az_1deg * ((target_az - start_az + 180) % 360 - 180) / ((current_az - start_az + 180) % 360 - 180)}")
+
+
+def calibrate_staple_range():
+    print("Move to side of staple (q when done)")
+    movement_window()
+    staple_side1 = get_pos()[1] / az_1deg
+    global current_az
+    current_az = get_pos()[1] / az_1deg
+    direction = input("Is staple (1) clockwise or (2) counterclockwise from motor? ")
+    while direction != '1' and direction != '2':
+        print("Invalid answer")
+        direction = input("Is staple (1) clockwise or (2) counterclockwise from motor? ")
+    # az movement pos -> ccw, neg -> cw
+    if direction == '1':
+        staple_side2 = staple_side1 - 5
+    elif direction == '2':
+        staple_side2 = staple_side1 + 5
+
+    if staple_side1 < 0:
+        staple_side1 = 360 + staple_side1
+    if staple_side2 < 0:
+        staple_side2 = 360 + staple_side2
+
+    if staple_side1 > 360:
+        staple_side1 = staple_side1 % 360
+    if staple_side2 > 360:
+        staple_side2 = staple_side2 % 360
+
+    return staple_side1, staple_side2
 
 
 def move_to(alt, az, speed):
@@ -233,6 +285,21 @@ def loop():
 stellarium_connect.start_socket()
 current_alt, current_az = align()
 set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
+
+staple_choice = input("update staple calibration? (y/n) ")
+while staple_choice != 'y' and staple_choice != 'n':
+    print("Invalid answer")
+    staple_choice = input("update staple calibration? (y/n) ")
+shelve_file = shelve.open('staple')
+if staple_choice == 'y':
+    staple_side1, staple_side2 = calibrate_staple_range()
+    shelve_file['staple_side1'] = staple_side1
+    shelve_file['staple_side2'] = staple_side2
+elif staple_choice == 'n':
+    staple_side1 = shelve_file['staple_side1']
+    staple_side2 = shelve_file['staple_side2']
+shelve_file.close()
+
 loop()
 stellarium_connect.close_socket()
 
@@ -240,6 +307,6 @@ stellarium_connect.close_socket()
 
 # notes: 
 # az movement pos -> ccw, neg -> cw
-# 1deg az is about 5mm
+# 1deg az is about 5mm, staple about 16mm long
 # moves same distance regardless of speed, moves same speed regardless of distance
 # speed in units/sec, same units as distance (eg move 1000 at 1000 takes 1s, 1000 at 500 is 2s, 1000 at 2000 is 0.5s, etc)
