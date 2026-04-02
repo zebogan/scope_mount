@@ -1,8 +1,8 @@
 import socket, atexit, struct, math, time
 
-def ra_dec_to_alt_az(ra_deg, dec_deg, lat_deg, lon_deg):
+def ra_dec_to_alt_az(ra_deg, dec_deg, lat_deg, lon_deg, t=time.time()):
     # Current time
-    t = time.time()
+    #t = time.time()
 
     # Julian Date
     jd = t / 86400.0 + 2440587.5

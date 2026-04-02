@@ -195,9 +195,16 @@ def tracking(ra_deg, dec_deg):
     global current_alt, current_az
     try:
         while True:
-            target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
-            current_alt, current_az = slew(target_alt, target_az, 100, True)
-            time.sleep(0.1)
+            next_alt, next_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude, time.time() + 1)
+            delta_alt = next_alt - current_alt
+            if next_az - current_az > 180:
+                next_az = next_az - 360
+            if next_az - current_az < -180:
+                next_az = next_az + 360
+            delta_az = next_az - current_az
+            speed = round((delta_alt ** 2 + delta_az ** 2) ** 0.5)
+            current_alt, current_az = slew(next_alt, next_az, speed, True)
+            time.sleep(1)
     except KeyboardInterrupt:
         pass
 
