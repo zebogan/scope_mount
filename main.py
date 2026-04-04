@@ -4,6 +4,7 @@ import atexit, time, pygame
 import stellarium_connect
 import info
 import shelve
+import multiprocessing
 
 def exit_handler():
     w.close()
@@ -77,7 +78,7 @@ def move_to(alt, az, speed):
     payload = struct.pack(
         '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
         constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
-        alt,az,0,0,0,
+        alt,az,get_focus_pos(),0,0,
         speed,
         Encoder.encode_axes([]),
         1,
@@ -127,6 +128,85 @@ def queue_status():
     response = w.send_query_payload(payload)
     unpackedResponse = struct.unpack('<BB', response)
     return unpackedResponse[1]
+
+
+def get_focus_pos():
+    payload = struct.pack(
+        '<B',
+        constants.host_query_command_dict['GET_EXTENDED_POSITION']
+    )
+
+    response = w.send_query_payload(payload)
+    unpackedResponse = struct.unpack('<BiiiiiH', response)
+    return unpackedResponse[3]
+
+
+def move_focus_to(f, speed):
+    payload = struct.pack(
+        '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
+        constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
+        get_pos()[0],get_pos()[1],f,0,0,
+        speed,
+        Encoder.encode_axes([]),
+        1,
+        1
+    )
+
+    w.send_action_payload(payload)
+
+
+def focus_window():
+    pygame.init()
+    screen = pygame.display.set_mode((200, 200))
+    pygame.display.set_caption('Focus')
+    clock = pygame.time.Clock()
+    running = True
+    step_speed = [500, 250, 100, 50, 20]
+    current_speed = 0
+    tickrate = 10
+
+    font = pygame.font.Font(None, 32)
+
+    
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
+                    running = False
+                if event.key == pygame.K_l:
+                    if current_speed != 0:
+                        current_speed -= 1
+                elif event.key == pygame.K_k:
+                    if current_speed != len(step_speed) - 1:
+                        current_speed += 1
+
+        keys = pygame.key.get_pressed()
+
+        d = 0
+
+        if keys[pygame.K_i]:
+            d -= round(step_speed[current_speed] / tickrate)
+        if keys[pygame.K_o]:
+            d += round(step_speed[current_speed] / tickrate)
+
+        if d != 0:
+            if queue_status() == 1:
+                move_focus_to(get_focus_pos() + d, step_speed[current_speed])
+
+        text = font.render(f"{step_speed[current_speed]}", True, (255, 255, 255), (100,100,100))
+
+        textRect = text.get_rect()
+        textRect.center = (100, 100)
+        screen.fill((100,100,100))
+        screen.blit(text, textRect)
+        pygame.display.update()
+
+        clock.tick(tickrate)
+
+    pygame.quit()
 
 
 def movement_window():
@@ -216,6 +296,7 @@ def loop():
             print("invalid answer")
             option = input("goto (1), goto w/ tracking (2), cal 2nd star (4), or quit (3): ")
         if option == '3':
+            focus_process.terminate()
             break
         else:
             global current_alt, current_az
@@ -238,9 +319,12 @@ def loop():
 #stop()
 
 stellarium_connect.start_socket()
+focus_process = multiprocessing.Process(target=focus_window)
+focus_process.start()
 current_alt, current_az = align()
 set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
 loop()
+focus_process.join()
 stellarium_connect.close_socket()
 
 #movement_window()
