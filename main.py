@@ -273,18 +273,19 @@ def movement_window():
 
 def tracking(ra_deg, dec_deg):
     global current_alt, current_az
+    delta_time = 1
     try:
         while True:
-            next_alt, next_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude, time.time() + 1)
+            next_alt, next_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude, time.time() + delta_time)
             delta_alt = next_alt - current_alt
             if next_az - current_az > 180:
                 next_az = next_az - 360
             if next_az - current_az < -180:
                 next_az = next_az + 360
             delta_az = next_az - current_az
-            speed = round((delta_alt ** 2 + delta_az ** 2) ** 0.5)
+            speed = round((((alt_1deg * delta_alt) ** 2 + (az_1deg * delta_az) ** 2) ** 0.5) / delta_time)
             current_alt, current_az = slew(next_alt, next_az, speed, True)
-            time.sleep(1)
+            time.sleep(delta_time)
     except KeyboardInterrupt:
         pass
 
