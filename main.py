@@ -50,6 +50,8 @@ def slew(target_alt, target_az, speed, tracking):
     return target_alt, target_az
     
 
+# TODO: 2 star alignment to reduce error in using 1 star to calibrate
+# error seems large when using camera with 2x barlow
 def align():
     print("Center bright star in eyepiece (press q when done)")
     movement_window()
@@ -283,6 +285,10 @@ def tracking(ra_deg, dec_deg):
             if next_az - current_az < -180:
                 next_az = next_az + 360
             delta_az = next_az - current_az
+            # TODO: figure out how to deal with speed
+            # in general, it seems like the speed required is around 1.1, but the motors are just too low resolution to effectively track (maybe, need to test)
+            # idea: put gear reducers on both, which if i do the 4:1 ones should 4x the resolution
+            # maybe dont need to but will find out tonight
             speed = round((((alt_1deg * delta_alt) ** 2 + (az_1deg * delta_az) ** 2) ** 0.5) / delta_time)
             current_alt, current_az = slew(next_alt, next_az, speed, True)
             time.sleep(delta_time)

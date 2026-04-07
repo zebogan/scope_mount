@@ -84,6 +84,8 @@ def get_slew():
     data = conn.recv(1024)
     length, commandType, systemTime, ra_int, dec_int = struct.unpack("<HHQIi", data)
 
+    # TODO: possible issue: (ra_int / 2**32) or (dec_int / 2**32) returns int, thus losing precision?
+    # unknown if actually an issue but should check
     ra_deg  = (ra_int / 2**32) * 360.0
     dec_deg = (dec_int / 2**32) * 360.0
     # print(f"Length: {length}")
