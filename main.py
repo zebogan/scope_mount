@@ -324,15 +324,15 @@ def loop():
 
     
 #stop()
-
-stellarium_connect.start_socket()
-focus_process = multiprocessing.Process(target=focus_window)
-focus_process.start()
-current_alt, current_az = align()
-set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
-loop()
-focus_process.join()
-stellarium_connect.close_socket()
+if __name__ == "__main__":
+    stellarium_connect.start_socket()
+    focus_process = multiprocessing.Process(target=focus_window)
+    focus_process.start()
+    current_alt, current_az = align()
+    set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
+    loop()
+    focus_process.join()
+    stellarium_connect.close_socket()
 
 #movement_window()
 
