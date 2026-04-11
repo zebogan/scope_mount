@@ -3,7 +3,6 @@ import constants, Encoder, Writer
 import atexit, time, pygame
 import stellarium_connect
 import info
-import shelve
 import multiprocessing
 
 def exit_handler():
@@ -19,7 +18,7 @@ w = Writer.StreamWriter(ser, 1)
 # printer distance to 1deg
 az_1deg = 389.16 # 35100/90 = 390
 alt_1deg = 668.6 # 40116/60 = 668.6
-# TODO: need to calibrate more?
+# TODO: need to calibrate alt more? az is pretty good
 
 latitude = info.latitude
 longitude = info.longitude
@@ -38,11 +37,11 @@ def slew(target_alt, target_az, speed, tracking):
     if target_az - current_az < -180:
         effective_az = target_az + 360
 
-    move_to(round(target_alt * alt_1deg), round(effective_az * az_1deg), speed)
+    move_to([round(target_alt * alt_1deg), round(effective_az * az_1deg)], speed, False)
 
     if tracking == False:
         print("slewing...")
-    while get_pos() != (round(target_alt * alt_1deg), round(effective_az * az_1deg)):
+    while get_pos(False) != (round(target_alt * alt_1deg), round(effective_az * az_1deg)):
         time.sleep(0.1)
     if tracking == False:
         print("target reached!")
@@ -67,8 +66,8 @@ def align():
 def second_star_align(target_alt, target_az, start_alt, start_az):
     movement_window()
     global current_alt, current_az
-    current_az = get_pos()[1] / az_1deg
-    current_alt = get_pos()[0] / alt_1deg
+    current_az = get_pos(False)[1] / az_1deg
+    current_alt = get_pos(False)[0] / alt_1deg
 
     print(f"alt: current {current_alt} - target {target_alt} = {current_alt - target_alt}, start {start_alt}")
     print(f"updated alt_1deg: {alt_1deg * ((target_alt - start_alt) / (current_alt - start_alt))}")
@@ -76,16 +75,27 @@ def second_star_align(target_alt, target_az, start_alt, start_az):
     print(f"updated az_1deg: {az_1deg * ((target_az - start_az + 180) % 360 - 180) / ((current_az - start_az + 180) % 360 - 180)}")
 
 
-def move_to(alt, az, speed):
-    payload = struct.pack(
-        '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
-        constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
-        alt,az,get_focus_pos(),0,0,
-        speed,
-        Encoder.encode_axes([]),
-        1,
-        1
-    )
+def move_to(pos, speed, focus):
+    if focus == False:
+        payload = struct.pack(
+            '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
+            constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
+            pos[0],pos[1],0,0,0,
+            speed,
+            Encoder.encode_axes(['z']),
+            1,
+            1
+        )
+    elif focus == True:
+        payload = struct.pack(
+            '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
+            constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
+            0,0,pos,0,0,
+            speed,
+            Encoder.encode_axes(['x', 'y']),
+            1,
+            1
+        )
 
     w.send_action_payload(payload)
 
@@ -100,7 +110,7 @@ def stop():
     w.send_action_payload(payload)
 
 
-def get_pos():
+def get_pos(focus):
     payload = struct.pack(
         '<B',
         constants.host_query_command_dict['GET_EXTENDED_POSITION']
@@ -108,7 +118,10 @@ def get_pos():
 
     response = w.send_query_payload(payload)
     unpackedResponse = struct.unpack('<BiiiiiH', response)
-    return unpackedResponse[1], unpackedResponse[2]
+    if focus == False:
+        return unpackedResponse[1], unpackedResponse[2]
+    elif focus == True:
+        return unpackedResponse[3]
 
 
 def set_pos(alt, az):
@@ -132,31 +145,7 @@ def queue_status():
     return unpackedResponse[1]
 
 
-def get_focus_pos():
-    payload = struct.pack(
-        '<B',
-        constants.host_query_command_dict['GET_EXTENDED_POSITION']
-    )
-
-    response = w.send_query_payload(payload)
-    unpackedResponse = struct.unpack('<BiiiiiH', response)
-    return unpackedResponse[3]
-
-
-def move_focus_to(f, speed):
-    payload = struct.pack(
-        '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
-        constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
-        get_pos()[0],get_pos()[1],f,0,0,
-        speed,
-        Encoder.encode_axes([]),
-        1,
-        1
-    )
-
-    w.send_action_payload(payload)
-
-
+# TODO: fix ctrl+c to stop tracking kills focus window
 def focus_window():
     pygame.init()
     screen = pygame.display.set_mode((200, 200))
@@ -196,7 +185,7 @@ def focus_window():
 
         if d != 0:
             if queue_status() == 1:
-                move_focus_to(get_focus_pos() + d, step_speed[current_speed])
+                move_to(get_pos(True) + d, step_speed[current_speed], True)
 
         text = font.render(f"{step_speed[current_speed]}", True, (255, 255, 255), (100,100,100))
 
@@ -211,6 +200,7 @@ def focus_window():
     pygame.quit()
 
 
+# TODO: move away from stop() b/c it causes issues with focuser motor
 def movement_window():
     pygame.init()
     screen = pygame.display.set_mode((200, 200))
@@ -219,6 +209,7 @@ def movement_window():
     running = True
     moving = False
     step_speed = 500
+    tickrate = 10
 
     font = pygame.font.Font(None, 32)
 
@@ -253,7 +244,7 @@ def movement_window():
 
         if dx != 0 or dy != 0:
             if queue_status() == 1:
-                move_to(round(get_pos()[0] + dy), round(get_pos()[1] + dx), step_speed)
+                move_to([round(get_pos(False)[0] + dy), round(get_pos(False)[1] + dx)], step_speed, False)
                 moving = True
         else:
             if moving:
@@ -268,11 +259,12 @@ def movement_window():
         screen.blit(text, textRect)
         pygame.display.update()
 
-        clock.tick(20)
+        clock.tick(tickrate)
 
     pygame.quit()
 
 
+# TODO: stop using KeyboardInterrupt to stop tracking, do something more elegant
 def tracking(ra_deg, dec_deg):
     global current_alt, current_az
     delta_time = 1
@@ -296,6 +288,7 @@ def tracking(ra_deg, dec_deg):
         pass
 
 
+# TODO: potentially move to a pygame ui instead of 2 windows + tracking in cli + cli menu
 def loop():
     while True:
         option = input("goto (1), goto w/ tracking (2), cal 2nd star (4), or quit (3): ")
