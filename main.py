@@ -28,6 +28,8 @@ longitude = info.longitude
 current_alt = 0
 current_az = 0
 
+currentlyTracking = False
+
 
 def slew(target_alt, target_az, speed, tracking):
     effective_az = target_az
@@ -266,9 +268,12 @@ def movement_window():
 # TODO: fix ctrl+c to stop tracking kills focus window (likely still issue with new window system)
 # TODO: move away from stop() b/c it causes issues with focuser motor (likely still issue with new window system)
 def window():
+    global currentlyTracking
+    global current_alt, current_az
+
     pygame.init()
-    screen = pygame.display.set_mode((400, 200))
-    pygame.display.set_caption('Focus + Alignment')
+    screen = pygame.display.set_mode((400, 300))
+    pygame.display.set_caption('RepliCosmos Control')
     clock = pygame.time.Clock()
     running = True
     moving = False
@@ -281,7 +286,20 @@ def window():
 
     font = pygame.font.Font(None, 32)
 
-    
+    alignment_color = (50,50,50)
+    focus_color = (100,100,100)
+    tracking_color_active = (0, 150, 0)
+    tracking_color_inactive = (150, 0, 0)
+    current_tracking_color = tracking_color_inactive
+    tracking_bg_color = (75, 75, 75)
+
+    alignment_title = font.render("Alignment", True, (255, 255, 255), alignment_color)
+    focus_title = font.render("Focus", True, (255, 255, 255), focus_color)
+    alignment_title_rect = alignment_title.get_rect()
+    focus_title_rect = focus_title.get_rect()
+    alignment_title_rect.center = (100, 67)
+    focus_title_rect.center = (300, 67)
+
 
     while running:
         for event in pygame.event.get():
@@ -290,19 +308,38 @@ def window():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
                     running = False
+
                 if event.key == pygame.K_e:
                     aligning = False
+
                 if aligning:
                     if event.key == pygame.K_UP:
                         movement_step_speed += 50
                     elif event.key == pygame.K_DOWN:
                         movement_step_speed -= 50
+
                 if event.key == pygame.K_l:
                     if current_focus_speed != 0:
                         current_focus_speed -= 1
                 elif event.key == pygame.K_k:
                     if current_focus_speed != len(focus_step_speed) - 1:
                         current_focus_speed += 1
+
+                if event.key == pygame.K_t:
+                    if currentlyTracking == True:
+                        print("stopping tracking")
+                        tracking_process.terminate()
+                        tracking_process.join()
+                    elif currentlyTracking == False:
+                        print("send slew from stellarium")
+                        ra_deg, dec_deg = stellarium_connect.get_slew()
+                        target_alt, target_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
+                        current_alt, current_az = slew(target_alt, target_az, 500, False)
+                        tracking_process = multiprocessing.Process(target=tracking, args=(ra_deg, dec_deg, ))
+                        tracking_process.start()
+                        print("tracking...")
+                        currentlyTracking = True
+                        
 
         keys = pygame.key.get_pressed()
 
@@ -343,54 +380,74 @@ def window():
             if queue_status() == 1:
                 move_to(get_pos(True) + d, focus_step_speed[current_focus_speed], True)
 
-        if aligning:
-            movement_text = font.render(f"{movement_step_speed}", True, (255, 255, 255), (0,0,0))
+        if currentlyTracking:
+            current_tracking_color = tracking_color_active
         else:
-            movement_text = font.render("---", True, (255, 255, 255), (0,0,0))
-        focus_text = font.render(f"{focus_step_speed[current_focus_speed]}", True, (255, 255, 255), (100,100,100))
+            current_tracking_color = tracking_color_inactive
+
+        tracking_text = font.render("Tracking", True, (255, 255, 255), current_tracking_color)
+        tracking_text_rect = tracking_text.get_rect()
+        tracking_text_rect.center = (200, 250)
+        tracking_bg = pygame.Rect(0, 200, 400, 100)
+        pygame.draw.rect(screen, tracking_bg_color, tracking_bg)
+        tracking_bg_small = pygame.Rect(125, 225, 150, 50)
+        pygame.draw.rect(screen, current_tracking_color, tracking_bg_small)
+        screen.blit(tracking_text, tracking_text_rect)
+
+        if aligning:
+            movement_text = font.render(f"{movement_step_speed}", True, (255, 255, 255), alignment_color)
+        else:
+            movement_text = font.render("---", True, (255, 255, 255), alignment_color)
+        focus_text = font.render(f"{focus_step_speed[current_focus_speed]}", True, (255, 255, 255), focus_color)
 
         movement_textRect = movement_text.get_rect()
         focus_textRect = focus_text.get_rect()
+
         movement_textRect.center = (100, 100)
         focus_textRect.center = (300, 100)
-        movement_bg = pygame.Rect(200, 200, 200, 200)
-        focus_bg = pygame.Rect(0, 0, 200, 200)
-        pygame.draw.rect(screen, (0,0,0), movement_bg)
-        pygame.draw.rect(screen, (100,100,100), focus_bg)
+
+        movement_bg = pygame.Rect(0, 0, 200, 200)
+        focus_bg = pygame.Rect(200, 0, 200, 200)
+
+        pygame.draw.rect(screen, alignment_color, movement_bg)
+        pygame.draw.rect(screen, focus_color, focus_bg)
+
         screen.blit(movement_text, movement_textRect)
         screen.blit(focus_text, focus_textRect)
+        screen.blit(alignment_title, alignment_title_rect)
+        screen.blit(focus_title, focus_title_rect)
+
         pygame.display.update()
 
         clock.tick(tickrate)
 
     pygame.quit()
+    if currentlyTracking == True:
+        tracking_process.terminate()
+        tracking_process.join()
 
 
-# TODO: stop using KeyboardInterrupt to stop tracking, do something more elegant
 def tracking(ra_deg, dec_deg):
     global current_alt, current_az
     delta_time = 1
-    try:
-        while True:
-            next_alt, next_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude, time.time() + delta_time)
-            delta_alt = next_alt - current_alt
-            if next_az - current_az > 180:
-                next_az = next_az - 360
-            if next_az - current_az < -180:
-                next_az = next_az + 360
-            delta_az = next_az - current_az
-            # TODO: figure out how to deal with speed
-            # in general, it seems like the speed required is around 1.1, but the motors are just too low resolution to effectively track (maybe, need to test)
-            # idea: put gear reducers on both, which if i do the 4:1 ones should 4x the resolution
-            # maybe dont need to but will find out tonight
-            speed = round((((alt_1deg * delta_alt) ** 2 + (az_1deg * delta_az) ** 2) ** 0.5) / delta_time)
-            current_alt, current_az = slew(next_alt, next_az, speed, True)
-            time.sleep(delta_time)
-    except KeyboardInterrupt:
-        pass
+    while True:
+        next_alt, next_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude, time.time() + delta_time)
+        delta_alt = next_alt - current_alt
+        if next_az - current_az > 180:
+            next_az = next_az - 360
+        if next_az - current_az < -180:
+            next_az = next_az + 360
+        delta_az = next_az - current_az
+        # TODO: figure out how to deal with speed
+        # in general, it seems like the speed required is around 1.1, but the motors are just too low resolution to effectively track (maybe, need to test)
+        # idea: put gear reducers on both, which if i do the 4:1 ones should 4x the resolution
+        # maybe dont need to but will find out tonight
+        speed = round((((alt_1deg * delta_alt) ** 2 + (az_1deg * delta_az) ** 2) ** 0.5) / delta_time)
+        current_alt, current_az = slew(next_alt, next_az, speed, True)
+        time.sleep(delta_time)
 
 
-# TODO: potentially move to a pygame ui instead of 2 windows + tracking in cli + cli menu
+
 def loop():
     while True:
         option = input("goto (1), goto w/ tracking (2), cal 2nd star (4), or quit (3): ")
@@ -398,7 +455,7 @@ def loop():
             print("invalid answer")
             option = input("goto (1), goto w/ tracking (2), cal 2nd star (4), or quit (3): ")
         if option == '3':
-            focus_process.terminate()
+            window_process.terminate()
             break
         else:
             global current_alt, current_az
@@ -421,12 +478,11 @@ def loop():
 #stop()
 if __name__ == "__main__":
     stellarium_connect.start_socket()
-    focus_process = multiprocessing.Process(target=window)
-    focus_process.start()
+    window_process = multiprocessing.Process(target=window)
+    window_process.start()
     current_alt, current_az = align()
     set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
-    loop()
-    focus_process.join()
+    window_process.join()
     stellarium_connect.close_socket()
 
 #movement_window()
