@@ -328,7 +328,7 @@ def window():
                 if event.key == pygame.K_t:
                     if currentlyTracking == True:
                         print("stopping tracking")
-                        tracking_process.terminate()
+                        currentlyTracking = False
                         tracking_process.join()
                     elif currentlyTracking == False:
                         print("send slew from stellarium")
@@ -423,14 +423,14 @@ def window():
 
     pygame.quit()
     if currentlyTracking == True:
-        tracking_process.terminate()
+        currentlyTracking = False
         tracking_process.join()
 
 
 def tracking(ra_deg, dec_deg):
     global current_alt, current_az
     delta_time = 1
-    while True:
+    while currentlyTracking:
         next_alt, next_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude, time.time() + delta_time)
         delta_alt = next_alt - current_alt
         if next_az - current_az > 180:
