@@ -52,9 +52,7 @@ def slew(target_alt, target_az, speed, tracking):
 # TODO: 2 star alignment to reduce error in using 1 star to calibrate
 # error seems large when using camera with 2x barlow
 def align():
-    print("Center bright star in eyepiece (press q when done)")
-    movement_window()
-    print("Slew in Stellarium")
+    print("Center bright star in eyepiece, slew in Stellarium when done (press e in window to exit alignment mode)")
     ra_deg, dec_deg = stellarium_connect.get_slew()
     star_alt, star_az = stellarium_connect.ra_dec_to_alt_az(ra_deg, dec_deg, latitude, longitude)
     print(f"Star alt: {star_alt}, Star az: {star_az}")
@@ -63,6 +61,7 @@ def align():
     return star_alt, star_az
 
 
+# TODO: update for new window system if using
 def second_star_align(target_alt, target_az, start_alt, start_az):
     movement_window()
     global current_alt, current_az
@@ -264,6 +263,109 @@ def movement_window():
     pygame.quit()
 
 
+# TODO: fix ctrl+c to stop tracking kills focus window (likely still issue with new window system)
+# TODO: move away from stop() b/c it causes issues with focuser motor (likely still issue with new window system)
+def window():
+    pygame.init()
+    screen = pygame.display.set_mode((400, 200))
+    pygame.display.set_caption('Focus + Alignment')
+    clock = pygame.time.Clock()
+    running = True
+    moving = False
+    aligning = True
+    movement_step_speed = 500
+    tickrate = 10
+
+    focus_step_speed = [500, 250, 100, 50, 20]
+    current_focus_speed = 0
+
+    font = pygame.font.Font(None, 32)
+
+    
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
+                    running = False
+                if event.key == pygame.K_e:
+                    aligning = False
+                if aligning:
+                    if event.key == pygame.K_UP:
+                        movement_step_speed += 50
+                    elif event.key == pygame.K_DOWN:
+                        movement_step_speed -= 50
+                if event.key == pygame.K_l:
+                    if current_focus_speed != 0:
+                        current_focus_speed -= 1
+                elif event.key == pygame.K_k:
+                    if current_focus_speed != len(focus_step_speed) - 1:
+                        current_focus_speed += 1
+
+        keys = pygame.key.get_pressed()
+
+        dx = 0
+        dy = 0
+
+        d = 0
+
+        if keys[pygame.K_i]:
+            d -= round(focus_step_speed[current_focus_speed] / tickrate)
+        if keys[pygame.K_o]:
+            d += round(focus_step_speed[current_focus_speed] / tickrate)
+
+        if aligning:
+            if keys[pygame.K_d]:
+                dx += az_1deg
+            if keys[pygame.K_a]:
+                dx -= az_1deg
+
+            if keys[pygame.K_w]:
+                dy += alt_1deg
+            if keys[pygame.K_s]:
+                dy -= alt_1deg
+
+
+        
+        if aligning:
+            if dx != 0 or dy != 0:
+                if queue_status() == 1:
+                    move_to([round(get_pos(False)[0] + dy), round(get_pos(False)[1] + dx)], movement_step_speed, False)
+                    moving = True
+            else:
+                if moving:
+                    stop()
+                    moving = False
+
+        if d != 0:
+            if queue_status() == 1:
+                move_to(get_pos(True) + d, focus_step_speed[current_focus_speed], True)
+
+        if aligning:
+            movement_text = font.render(f"{movement_step_speed}", True, (255, 255, 255), (0,0,0))
+        else:
+            movement_text = font.render("---", True, (255, 255, 255), (0,0,0))
+        focus_text = font.render(f"{focus_step_speed[current_focus_speed]}", True, (255, 255, 255), (100,100,100))
+
+        movement_textRect = movement_text.get_rect()
+        focus_textRect = focus_text.get_rect()
+        movement_textRect.center = (100, 100)
+        focus_textRect.center = (300, 100)
+        movement_bg = pygame.Rect(200, 200, 200, 200)
+        focus_bg = pygame.Rect(0, 0, 200, 200)
+        pygame.draw.rect(screen, (0,0,0), movement_bg)
+        pygame.draw.rect(screen, (100,100,100), focus_bg)
+        screen.blit(movement_text, movement_textRect)
+        screen.blit(focus_text, focus_textRect)
+        pygame.display.update()
+
+        clock.tick(tickrate)
+
+    pygame.quit()
+
+
 # TODO: stop using KeyboardInterrupt to stop tracking, do something more elegant
 def tracking(ra_deg, dec_deg):
     global current_alt, current_az
@@ -319,7 +421,7 @@ def loop():
 #stop()
 if __name__ == "__main__":
     stellarium_connect.start_socket()
-    focus_process = multiprocessing.Process(target=focus_window)
+    focus_process = multiprocessing.Process(target=window)
     focus_process.start()
     current_alt, current_az = align()
     set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
