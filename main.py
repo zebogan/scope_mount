@@ -265,18 +265,15 @@ def movement_window():
     pygame.quit()
 
 
-# TODO: fix ctrl+c to stop tracking kills focus window (likely still issue with new window system)
-# TODO: move away from stop() b/c it causes issues with focuser motor (likely still issue with new window system)
 def window():
     global currentlyTracking
     global current_alt, current_az
 
     pygame.init()
     screen = pygame.display.set_mode((400, 300))
-    pygame.display.set_caption('RepliCosmos Control')
+    pygame.display.set_caption('Terminator Control')
     clock = pygame.time.Clock()
     running = True
-    moving = False
     aligning = True
     movement_step_speed = 500
     tickrate = 10
@@ -355,14 +352,14 @@ def window():
 
         if aligning:
             if keys[pygame.K_d]:
-                dx += az_1deg
+                dx += (movement_step_speed / tickrate)
             if keys[pygame.K_a]:
-                dx -= az_1deg
+                dx -= (movement_step_speed / tickrate)
 
             if keys[pygame.K_w]:
-                dy += alt_1deg
+                dy += (movement_step_speed / tickrate)
             if keys[pygame.K_s]:
-                dy -= alt_1deg
+                dy -= (movement_step_speed / tickrate)
 
 
         
@@ -370,11 +367,6 @@ def window():
             if dx != 0 or dy != 0:
                 if queue_status() == 1:
                     move_to([round(get_pos(False)[0] + dy), round(get_pos(False)[1] + dx)], movement_step_speed, False)
-                    moving = True
-            else:
-                if moving:
-                    stop()
-                    moving = False
 
         if d != 0:
             if queue_status() == 1:
