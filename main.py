@@ -82,7 +82,7 @@ def move_to(pos, speed, focus):
         payload = struct.pack(
             '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
             constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
-            pos[0],pos[1],get_pos(True),0,0,
+            pos[0],pos[1],0,get_pos(True),0,
             speed,
             Encoder.encode_axes([]),
             1,
@@ -92,7 +92,7 @@ def move_to(pos, speed, focus):
         payload = struct.pack(
             '<BiiiiiIBfh', # 32 bytes (512 byte buffer size)
             constants.host_action_command_dict['QUEUE_EXTENDED_POINT_ACCELERATED'],
-            get_pos(False)[0],get_pos(False)[1],pos,0,0,
+            get_pos(False)[0],get_pos(False)[1],0,pos,0,
             speed,
             Encoder.encode_axes([]),
             1,
@@ -123,14 +123,14 @@ def get_pos(focus):
     if focus == False:
         return unpackedResponse[1], unpackedResponse[2]
     elif focus == True:
-        return unpackedResponse[3]
+        return unpackedResponse[4]
 
 
-def set_pos(alt, az):
+def set_pos(alt, az, focus):
     payload = struct.pack(
         '<Biiiii',
         constants.host_action_command_dict['SET_EXTENDED_POSITION'],
-        alt, az, 0, 0, 0
+        alt, az, 0, focus, 0
     )
 
     w.send_action_payload(payload)
@@ -148,7 +148,6 @@ def queue_status():
 
 
 # TODO: fix focus+tracking same time issue
-# TODO: fix focus being terrible and evil
 def window():
     global currentlyTracking
     global current_alt, current_az
@@ -232,9 +231,9 @@ def window():
 
         d = 0
 
-        if keys[pygame.K_i]:
-            d -= round(focus_step_speed[current_focus_speed] / tickrate)
         if keys[pygame.K_o]:
+            d -= round(focus_step_speed[current_focus_speed] / tickrate)
+        if keys[pygame.K_i]:
             d += round(focus_step_speed[current_focus_speed] / tickrate)
 
         if aligning:
@@ -333,7 +332,7 @@ if __name__ == "__main__":
     window_thread = threading.Thread(target=window)
     window_thread.start()
     current_alt, current_az = align()
-    set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg))
+    set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg), 0)
     window_thread.join()
     stellarium_connect.close_socket()
 
