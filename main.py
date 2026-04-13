@@ -153,7 +153,7 @@ def window():
     global current_alt, current_az
 
     pygame.init()
-    screen = pygame.display.set_mode((400, 300))
+    screen = pygame.display.set_mode((600, 300))
     pygame.display.set_caption('Terminator Control')
     clock = pygame.time.Clock()
     running = True
@@ -165,6 +165,7 @@ def window():
     current_focus_speed = 0
 
     font = pygame.font.Font(None, 32)
+    controls_font = pygame.font.Font(None, 24)
 
     alignment_color = (50,50,50)
     focus_color = (100,100,100)
@@ -179,6 +180,11 @@ def window():
     focus_title_rect = focus_title.get_rect()
     alignment_title_rect.center = (100, 67)
     focus_title_rect.center = (300, 67)
+
+    controls = controls_font.render("W: move up\nS: move down\nA: move cw\nD: move ccw\nUP: move speed +\nDOWN: move speed -\nE: disable alignment\n\nI: focus in\nO: focus out\nL: focus speed +\nK: focus speed -\n\nT: goto and track\n\nQ/ESC: exit", True, (255, 255, 255), (0,0,0))
+    controls_rect = controls.get_rect()
+    controls_rect.center = (500, 150)
+    screen.blit(controls, controls_rect)
 
 
     while running:
@@ -335,8 +341,6 @@ if __name__ == "__main__":
     set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg), 0)
     window_thread.join()
     stellarium_connect.close_socket()
-
-#movement_window()
 
 # notes: 
 # az movement pos -> ccw, neg -> cw
