@@ -149,6 +149,30 @@ def queue_status():
     return unpackedResponse[1]
 
 
+def read_eeprom():
+    payload = struct.pack(
+        '<BHB',
+        constants.host_query_command_dict['READ_FROM_EEPROM'],
+        0x014A, 1
+    )
+
+    response = w.send_query_payload(payload)
+    unpackedResponse = struct.unpack('<BB', response)
+    return unpackedResponse[1]
+
+
+def write_eeprom():
+    payload = struct.pack(
+        '<BHBB',
+        constants.host_query_command_dict['WRITE_TO_EEPROM'],
+        0x014A, 1, 0
+    )
+
+    response = w.send_query_payload(payload)
+    unpackedResponse = struct.unpack('<BB', response)
+    return unpackedResponse
+
+
 # TODO: fix focus+tracking same time issue
 def window():
     global currentlyTracking
