@@ -32,6 +32,9 @@ current_az = 0
 currentlyTracking = False
 
 
+command_queue = queue.Queue()
+
+
 def slew(target_alt, target_az, speed, tracking):
     effective_az = target_az
 
@@ -44,9 +47,8 @@ def slew(target_alt, target_az, speed, tracking):
 
     if tracking == False:
         print("slewing...")
-    while get_pos(False) != (round(target_alt * alt_1deg), round(effective_az * az_1deg)):
-        time.sleep(0.1)
-    if tracking == False:
+        while get_pos(False) != (round(target_alt * alt_1deg), round(effective_az * az_1deg)):
+            time.sleep(0.1)
         print("target reached!")
 
     return target_alt, target_az
@@ -153,7 +155,7 @@ def window():
     global current_alt, current_az
 
     pygame.init()
-    screen = pygame.display.set_mode((600, 300))
+    screen = pygame.display.set_mode((580, 300))
     pygame.display.set_caption('Terminator Control')
     clock = pygame.time.Clock()
     running = True
@@ -176,15 +178,27 @@ def window():
 
     alignment_title = font.render("Alignment", True, (255, 255, 255), alignment_color)
     focus_title = font.render("Focus", True, (255, 255, 255), focus_color)
-    alignment_title_rect = alignment_title.get_rect()
-    focus_title_rect = focus_title.get_rect()
-    alignment_title_rect.center = (100, 67)
-    focus_title_rect.center = (300, 67)
+    alignment_title_rect = alignment_title.get_rect(center=(100, 67))
+    focus_title_rect = focus_title.get_rect(center=(300, 67))
 
-    controls = controls_font.render("W: move up\nS: move down\nA: move cw\nD: move ccw\nUP: move speed +\nDOWN: move speed -\nE: disable alignment\n\nI: focus in\nO: focus out\nL: focus speed +\nK: focus speed -\n\nT: goto and track\n\nQ/ESC: exit", True, (255, 255, 255), (0,0,0))
-    controls_rect = controls.get_rect()
-    controls_rect.center = (500, 150)
-    screen.blit(controls, controls_rect)
+    controls = ["W: move up", "S: move down", "A: move cw", "D: move ccw", "UP: move speed +", "DOWN: move speed -", "E: disable alignment", "I: focus in", "O: focus out", "L: focus speed +", "K: focus speed -", "", "T: goto and track", "", "ESC: exit"]
+    controls_text = []
+    controls_rects = []
+    for index, c in enumerate(controls):
+        current_control = controls_font.render(c, True, (255,255,255), (0,0,0))
+        controls_text.append(current_control)
+        current_rect = current_control.get_rect()
+        if index == 0:
+            current_rect.left = 403
+            current_rect.centery = 12
+        else:
+            current_rect.left = controls_rects[index - 1].left
+            current_rect.centery = controls_rects[index - 1].centery + 20
+        controls_rects.append(current_rect)
+    
+    for i in range(len(controls)):
+        screen.blit(controls_text[i], controls_rects[i])
+    
 
 
     while running:
@@ -192,7 +206,7 @@ def window():
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
+                if event.key == pygame.K_ESCAPE:
                     running = False
 
                 if event.key == pygame.K_e:
@@ -262,7 +276,8 @@ def window():
 
         if d != 0:
             if queue_status() == 1:
-                move_to(get_pos(True) + d, focus_step_speed[current_focus_speed], True)
+                command_queue.put((move_to, get_pos(True) + d, focus_step_speed[current_focus_speed], True))
+                #move_to(get_pos(True) + d, focus_step_speed[current_focus_speed], True)
 
         if currentlyTracking:
             current_tracking_color = tracking_color_active
@@ -270,8 +285,7 @@ def window():
             current_tracking_color = tracking_color_inactive
 
         tracking_text = font.render("Tracking", True, (255, 255, 255), current_tracking_color)
-        tracking_text_rect = tracking_text.get_rect()
-        tracking_text_rect.center = (200, 250)
+        tracking_text_rect = tracking_text.get_rect(center=(200, 250))
         tracking_bg = pygame.Rect(0, 200, 400, 100)
         pygame.draw.rect(screen, tracking_bg_color, tracking_bg)
         tracking_bg_small = pygame.Rect(125, 225, 150, 50)
@@ -284,11 +298,8 @@ def window():
             movement_text = font.render("---", True, (255, 255, 255), alignment_color)
         focus_text = font.render(f"{focus_step_speed[current_focus_speed]}", True, (255, 255, 255), focus_color)
 
-        movement_textRect = movement_text.get_rect()
-        focus_textRect = focus_text.get_rect()
-
-        movement_textRect.center = (100, 100)
-        focus_textRect.center = (300, 100)
+        movement_textRect = movement_text.get_rect(center=(100, 100))
+        focus_textRect = focus_text.get_rect(center=(300, 100))
 
         movement_bg = pygame.Rect(0, 0, 200, 200)
         focus_bg = pygame.Rect(200, 0, 200, 200)
@@ -327,19 +338,33 @@ def tracking(ra_deg, dec_deg):
         # idea: put gear reducers on both, which if i do the 4:1 ones should 4x the resolution
         # maybe dont need to but will find out tonight
         speed = round((((alt_1deg * delta_alt) ** 2 + (az_1deg * delta_az) ** 2) ** 0.5) / delta_time)
-        current_alt, current_az = slew(next_alt, next_az, speed, True)
+        command_queue.put((slew, next_alt, next_az, speed, True))
+        #slew(next_alt, next_az, speed, True)
         time.sleep(delta_time)
-                
+        current_alt, current_az = next_alt, next_az
+
+
+def worker():
+    while True:
+        while queue_status() == 0:
+            pass
+        items = command_queue.get()
+        func = items[0]
+        args = items[1:]
+        func(*args)
+        command_queue.task_done()
 
     
-stop()
+#stop()
 if __name__ == "__main__":
     stellarium_connect.start_socket()
+    threading.Thread(target=worker, daemon=True).start()
     window_thread = threading.Thread(target=window)
     window_thread.start()
     current_alt, current_az = align()
     set_pos(round(current_alt * alt_1deg), round(current_az * az_1deg), 0)
     window_thread.join()
+    command_queue.join()
     stellarium_connect.close_socket()
 
 # notes: 
