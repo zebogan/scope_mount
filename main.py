@@ -196,7 +196,7 @@ def window():
                     running = False
 
                 if event.key == pygame.K_e:
-                    aligning = False
+                    aligning = not aligning
 
                 if aligning:
                     if event.key == pygame.K_UP:
@@ -332,7 +332,7 @@ def tracking(ra_deg, dec_deg):
                 
 
     
-#stop()
+stop()
 if __name__ == "__main__":
     stellarium_connect.start_socket()
     window_thread = threading.Thread(target=window)
