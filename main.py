@@ -18,7 +18,7 @@ w = Writer.StreamWriter(ser, 1)
 
 # printer distance to 1deg
 az_1deg = 389.16 # 35100/90 = 390
-alt_1deg = 668.6 # 40116/60 = 668.6
+alt_1deg = 664.44 # 40116/60 = 668.6 661.38
 # TODO: need to calibrate alt more? az is pretty good
 
 latitude = info.latitude
