@@ -185,6 +185,7 @@ def window():
     running = True
     aligning = True
     movement_step_speed = 500
+    movement_step_speed_increment = 50
     tickrate = 10
 
     focus_step_speed = [500, 250, 100, 50, 20]
@@ -237,10 +238,19 @@ def window():
                     aligning = not aligning
 
                 if aligning:
+                    if movement_step_speed > 50:
+                        movement_step_speed_increment = 50
+                    elif movement_step_speed > 20:
+                        movement_step_speed_increment = 10
+                    elif movement_step_speed > 5:
+                        movement_step_speed_increment = 5
+                    else:
+                        movement_step_speed_increment = 1
+                    
                     if event.key == pygame.K_UP:
-                        movement_step_speed += 50
+                        movement_step_speed += movement_step_speed_increment
                     elif event.key == pygame.K_DOWN:
-                        movement_step_speed -= 50
+                        movement_step_speed -= movement_step_speed_increment
 
                 if event.key == pygame.K_l:
                     if current_focus_speed != 0:
